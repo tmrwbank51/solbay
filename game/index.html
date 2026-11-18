@@ -38,7 +38,7 @@
   #bust-label { font-size: 13px; font-weight: bold; color: #ff8a8a; margin-bottom: 4px; letter-spacing: 1px; }
   #bust-bar { height: 10px; background: rgba(255,255,255,0.2); border-radius: 5px; overflow: hidden; }
   #bust-fill { height: 100%; width: 0%; background: #ff4444; }
-  #help-hint { position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%); font-size: 12px; color: rgba(255,255,255,0.75); text-shadow: 0 1px 3px #000; }
+  #help-hint { position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%); font-size: 12px; color: rgba(255,255,255,0.75); text-shadow: 0 1px 3px #000; white-space: nowrap; }
   /* ---------- Screens ---------- */
   .screen { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; flex-direction: column; z-index: 10; background: rgba(5, 8, 14, 0.55); text-align: center; padding: 20px; }
   .screen.show { display: flex; }
@@ -85,7 +85,7 @@
   <div id="prompt"></div>
   <div id="toast"></div>
   <div id="bust-box"><div id="bust-label">⚠ POLICE ARE CLOSING IN — MOVE!</div><div id="bust-bar"><div id="bust-fill"></div></div></div>
-  <div id="help-hint">WASD move/drive · E enter car · Space jump/handbrake · F punch · M missions · R radio · T weather · P pause · H help</div>
+  <div id="help-hint">WASD move/drive · E enter car · Space jump/handbrake · F punch · B shop/taxi · M missions · R radio · T weather · P pause · H help</div>
 </div>
 
 <div id="screen-start" class="screen show">
@@ -102,6 +102,8 @@
     <span><b>E</b></span><span>Enter / exit car (steal it!)</span>
     <span><b>Space</b></span><span>Jump / handbrake drift</span>
     <span><b>F</b></span><span>Punch</span>
+    <span><b>B</b></span><span>Shop / taxi job (near a marker)</span>
+    <span><b>1–5</b></span><span>Start a mission fast</span>
     <span><b>M</b></span><span>Missions</span>
     <span><b>R / T</b></span><span>Radio station / weather</span>
     <span><b>Mouse drag</b></span><span>Orbit camera · wheel zooms</span>
@@ -122,14 +124,14 @@
 
 <div id="screen-missions" class="screen">
   <h2>MISSIONS</h2>
-  <p>Click a job to start it. Finish all three to own Sol Bay.</p>
+  <p>Click a job to start it. Finish all five to own Sol Bay.</p>
   <div id="mission-list"></div>
   <div><button class="btn secondary" id="btn-missions-close">Close</button></div>
 </div>
 
 <div id="screen-help" class="screen">
   <h2>HOW TO PLAY</h2>
-  <p>Explore the city on foot or by car. Press <b>E</b> near any car to take it — stealing raises your wanted level. The police chase you at 1 star and up: break line of sight and stay far away to cool off. If the bust meter fills while you crawl, you are <b>busted</b>; if your health hits zero, you are <b>wasted</b>. Missions pay cash — open them with <b>M</b> or walk to a green beacon. Your game saves when you finish a mission, and from the pause menu.</p>
+  <p>Explore the city on foot or by car. Press <b>E</b> near any car to take it — stealing raises your wanted level. The police chase you at 1 star and up: break line of sight and stay far away to cool off. If the bust meter fills while you crawl, you are <b>busted</b>; if your health hits zero, you are <b>wasted</b>. Missions pay cash — open them with <b>M</b> or walk to a green beacon. Press <b>B</b> near an orange marker to buy a taco (full health) or near a blue marker to repair your car at Vic's Garage, and pick up the fare at the yellow taxi stand to earn tips. Your game saves when you finish a mission, and from the pause menu.</p>
   <div><button class="btn" id="btn-help-close">Got it</button></div>
 </div>
 
@@ -167,6 +169,7 @@
 <script src="src/pedestrians.js"></script>
 <script src="src/police.js"></script>
 <script src="src/missions.js"></script>
+<script src="src/jobs.js"></script>
 <script src="src/audio.js"></script>
 <script src="src/input.js"></script>
 <script src="src/hud.js"></script>

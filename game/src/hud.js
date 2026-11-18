@@ -143,6 +143,16 @@ SB.HUD.prototype.drawMinimap = function (game) {
     c.arc(X(mk.position.x), Z(mk.position.z), 4, 0, Math.PI * 2);
     c.fill();
   }
+  // Shops, taxi stand and the live fare target.
+  if (game.jobs) {
+    var dots = game.jobs.minimapDots();
+    for (var di = 0; di < dots.length; di++) {
+      c.fillStyle = dots[di].color;
+      c.beginPath();
+      c.arc(X(dots[di].x), Z(dots[di].z), dots[di].r, 0, Math.PI * 2);
+      c.fill();
+    }
+  }
   // Traffic.
   c.fillStyle = "rgba(255,255,255,0.75)";
   for (var t = 0; t < game.cars.length; t++) {
@@ -212,9 +222,13 @@ SB.HUD.prototype.hideBrief = function () {
 };
 
 SB.HUD.prototype.showVictory = function (game) {
-  this.el.victoryStats.textContent = "All 3 missions complete · $" + game.money +
+  this.el.victoryStats.textContent = "All " + SB.MISSIONS.length + " missions complete · $" + game.money +
     " in the bank · " + game.stats.carsStolen + " cars stolen · " + game.stats.pedsHit + " pedestrians bowled over · wanted peaks: " +
     game.stats.maxWanted + " stars. Sol Bay is yours — free roam continues.";
+  // Pause the simulation behind the screen: the game step returns early for
+  // every state but playing/menu, so the world freezes until "Keep playing".
+  game.prevState = "playing";
+  game.state = "victory";
   this.showScreen("victory");
 };
 

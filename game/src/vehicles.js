@@ -6,13 +6,15 @@ SB.CAR_SPECS = {
   sedan: { maxSpeed: 38, accel: 15, brake: 30, grip: 6.5, turn: 2.1, length: 4.4, width: 2.0 },
   coupe: { maxSpeed: 48, accel: 19, brake: 32, grip: 7.2, turn: 2.3, length: 4.1, width: 1.9 },
   van: { maxSpeed: 30, accel: 11, brake: 26, grip: 5.8, turn: 1.8, length: 4.8, width: 2.1 },
-  police: { maxSpeed: 44, accel: 18, brake: 34, grip: 7.0, turn: 2.4, length: 4.4, width: 2.0 }
+  bike: { maxSpeed: 52, accel: 23, brake: 30, grip: 5.4, turn: 2.9, length: 2.6, width: 0.9 },
+  police: { maxSpeed: 48, accel: 18, brake: 34, grip: 7.0, turn: 2.4, length: 4.4, width: 2.0 }
 };
 
 SB.CAR_COLORS = [0xc23b2e, 0x2e6fc2, 0xe0a92e, 0x3a3f44, 0xe8e8e8, 0x2e8c4a, 0x7a4a9c, 0xd86a2e, 0x4ab2c2, 0x8c2e4a];
 
 // Build one procedural car. Returns { group, wheels, steerWheels, lightBar }.
 SB.buildCarModel = function (kind, color, tex) {
+  if (kind === "bike") return SB.buildBikeModel(color);
   var spec = SB.CAR_SPECS[kind];
   var g = new THREE.Group();
   var L = spec.length, W = spec.width;
@@ -90,6 +92,54 @@ SB.buildCarModel = function (kind, color, tex) {
   return out;
 };
 
+// Build one procedural motorcycle: two wheels, a tank, a seat and bars.
+// Same return shape as buildCarModel so stepCar drives it unchanged.
+SB.buildBikeModel = function (color) {
+  var g = new THREE.Group();
+  var bodyMat = new THREE.MeshLambertMaterial({ color: color });
+  var darkMat = new THREE.MeshLambertMaterial({ color: 0x1c1c1e });
+  var chromeMat = new THREE.MeshLambertMaterial({ color: 0xb8bcc0 });
+  // Frame + tank + seat, all narrow.
+  var frame = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.22, 1.7), darkMat);
+  frame.position.y = 0.55;
+  g.add(frame);
+  var tank = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.3, 0.6), bodyMat);
+  tank.position.set(0, 0.72, 0.15);
+  g.add(tank);
+  var seat = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.12, 0.6), darkMat);
+  seat.position.set(0, 0.7, -0.45);
+  g.add(seat);
+  // Front fork, raked forward, and the handlebar.
+  var fork = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.9, 0.1), chromeMat);
+  fork.position.set(0, 0.62, 0.88);
+  fork.rotation.x = 0.42;
+  g.add(fork);
+  var bars = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.08, 0.08), darkMat);
+  bars.position.set(0, 1.02, 0.72);
+  g.add(bars);
+  // Headlight + taillight (emissive so they read at night).
+  var head = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.2, 0.08), new THREE.MeshBasicMaterial({ color: 0xfff6cc }));
+  head.position.set(0, 0.78, 1.02);
+  g.add(head);
+  var tail = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.14, 0.06), new THREE.MeshBasicMaterial({ color: 0xff2a22 }));
+  tail.position.set(0, 0.66, -1.02);
+  g.add(tail);
+  // Wheels: thin cylinders, front one on a steering pivot.
+  var wheelGeo = new THREE.CylinderGeometry(0.36, 0.36, 0.12, 14);
+  wheelGeo.rotateZ(Math.PI / 2);
+  var wheels = [], steerWheels = [];
+  [[1, true], [-1, false]].forEach(function (p) {
+    var pivot = new THREE.Group();
+    pivot.position.set(0, 0.36, p[0] * 0.95);
+    var wheel = new THREE.Mesh(wheelGeo, darkMat);
+    pivot.add(wheel);
+    g.add(pivot);
+    wheels.push(wheel);
+    if (p[1]) steerWheels.push(pivot);
+  });
+  return { group: g, wheels: wheels, steerWheels: steerWheels, lightBar: null };
+};
+
 SB.makeCar = function (kind, color, x, z, heading, tex) {
   var model = SB.buildCarModel(kind, color, tex);
   model.group.position.set(x, 0, z);
@@ -120,7 +170,11 @@ SB.stepCar = function (car, dt, input, colliders, others) {
     car.speed -= car.speed * 0.7 * dt; // rolling drag
     if (Math.abs(car.speed) < 0.15) car.speed = 0;
   }
-  car.speed = Math.max(-11, Math.min(spec.maxSpeed, car.speed));
+  // A battered car loses top speed: at 0 health it crawls at 55% of its
+  // spec. Traffic and police stay at full health, so only the player's car
+  // (and anything the player wrecks) feels it. Vic's Garage restores it.
+  var effMax = spec.maxSpeed * (car.health >= 100 ? 1 : 0.55 + 0.45 * Math.max(0, car.health) / 100);
+  car.speed = Math.max(-11, Math.min(effMax, car.speed));
   // Velocity follows the heading with grip; handbrake breaks grip (drift).
   var fx = Math.sin(car.heading), fz = Math.cos(car.heading);
   var grip = input.handbrake ? 1.6 : spec.grip;

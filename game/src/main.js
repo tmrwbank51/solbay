@@ -96,9 +96,22 @@ SB.Game.prototype.initWorld = function () {
     this.cars.push(car);
     this.parked.push(car);
   }
+  // Parked motorcycles: faster and twitchier than any car.
+  var bikeSpots = [
+    [10, 55, 0], [-60, -8, Math.PI / 2], [108, 160, Math.PI]
+  ];
+  for (var bi = 0; bi < bikeSpots.length; bi++) {
+    var bs = bikeSpots[bi];
+    var bike = SB.makeCar("bike", rng.pick(SB.CAR_COLORS), bs[0], bs[1], bs[2], this.tex);
+    bike.parked = true;
+    this.scene.add(bike.group);
+    this.cars.push(bike);
+    this.parked.push(bike);
+  }
   this.peds = new SB.Pedestrians(this.scene, rng, 18);
   this.police = new SB.Police(this.scene, this.tex, this.colliders);
   this.missions = new SB.MissionManager(this.scene, this.tex);
+  this.jobs = new SB.JobManager(this.scene, this.tex);
   this.audio = new SB.Audio();
   this.input = new SB.Input(this.renderer.domElement);
   this.hud = new SB.HUD();
@@ -107,18 +120,28 @@ SB.Game.prototype.initWorld = function () {
 };
 
 SB.Game.prototype.buildRain = function () {
-  var N = 1400;
-  var pos = new Float32Array(N * 3);
+  // Rain as streaks, not dots: each drop is a short line segment slanted
+  // along its fall direction (down + wind), so it reads as rain in motion
+  // instead of falling snow. 700 streaks = 1400 vertices, one draw call.
+  var N = 700;
+  this.rainDrops = [];
+  this.rainWind = { x: -9, z: 4 };
+  this.rainFall = 55;
   for (var i = 0; i < N; i++) {
-    pos[i * 3] = (Math.random() - 0.5) * 70;
-    pos[i * 3 + 1] = Math.random() * 40;
-    pos[i * 3 + 2] = (Math.random() - 0.5) * 70;
+    this.rainDrops.push({
+      x: (Math.random() - 0.5) * 70,
+      y: Math.random() * 40,
+      z: (Math.random() - 0.5) * 70,
+      len: 1.1 + Math.random() * 0.6
+    });
   }
+  var pos = new Float32Array(N * 2 * 3);
   var geo = new THREE.BufferGeometry();
   geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
-  var mat = new THREE.PointsMaterial({ color: 0xaac8e0, size: 0.22, transparent: true, opacity: 0.85 });
-  this.rain = new THREE.Points(geo, mat);
+  var mat = new THREE.LineBasicMaterial({ color: 0x9fb8cc, transparent: true, opacity: 0.55 });
+  this.rain = new THREE.LineSegments(geo, mat);
   this.rain.visible = false;
+  this.rain.frustumCulled = false;
   this.scene.add(this.rain);
 };
 
@@ -148,7 +171,8 @@ SB.Game.prototype.puff = function (x, y, z, color) {
 SB.Game.prototype.rankName = function () {
   var done = 0;
   for (var i = 0; i < SB.MISSIONS.length; i++) if (this.missions.isComplete(SB.MISSIONS[i].id)) done++;
-  return ["Rookie", "Wheelman", "Hustler", "Kingpin of Sol Bay"][done];
+  var ranks = ["Rookie", "Wheelman", "Hustler", "Shot Caller", "Kingpin", "Kingpin of Sol Bay"];
+  return ranks[Math.min(done, ranks.length - 1)];
 };
 
 SB.Game.prototype.playerX = function () { return this.playerCar ? this.playerCar.x : this.player.x; };
@@ -316,6 +340,7 @@ SB.Game.prototype.exitCar = function () {
 // ---------- Bust / waste ----------
 SB.Game.prototype.onBusted = function () {
   if (this.missions.active) this.missions.finish(false, this);
+  this.jobs.cancelFare();
   this.police.clearAll();
   this.money = Math.max(0, this.money - 150);
   this.state = "busted";
@@ -335,6 +360,7 @@ SB.Game.prototype.afterBusted = function () {
 
 SB.Game.prototype.onWasted = function () {
   if (this.missions.active) this.missions.finish(false, this);
+  this.jobs.cancelFare();
   this.police.clearAll();
   this.money = Math.max(0, this.money - 100);
   this.state = "wasted";
@@ -381,11 +407,14 @@ SB.Game.prototype.step = function (dt) {
       this.weather = this.weather === "clear" ? "rain" : "clear";
       this.hud.toast(this.weather === "rain" ? "Rain rolling in." : "Skies clearing.");
     }
-    if (input.pressed("Digit1") || input.pressed("Digit2") || input.pressed("Digit3")) {
-      // Quick mission start from the number keys.
-      var idx = input.pressed("Digit1") ? 0 : input.pressed("Digit2") ? 1 : 2;
-      if (!this.missions.active && !this.missions.isComplete(SB.MISSIONS[idx].id)) {
-        this.missions.startMission(SB.MISSIONS[idx].id, this);
+    if (input.pressed("KeyB")) this.jobs.tryInteract(this);
+    // Quick mission start from the number keys (1-5).
+    for (var di = 1; di <= SB.MISSIONS.length; di++) {
+      if (input.pressed("Digit" + di)) {
+        var idx = di - 1;
+        if (!this.missions.active && !this.missions.isComplete(SB.MISSIONS[idx].id)) {
+          this.missions.startMission(SB.MISSIONS[idx].id, this);
+        }
       }
     }
   }
@@ -424,9 +453,14 @@ SB.Game.prototype.step = function (dt) {
     }
     if (crash > 8) {
       this.damagePlayer((crash - 8) * 1.4, true);
+      car.health = Math.max(0, car.health - (crash - 8) * 2.2);
       this.shake(0.35, 0.3);
       if (SB.audio) SB.audio.sfx("crash");
       this.puff(car.x, 1, car.z, 0x888888);
+    }
+    // A battered car smokes from the engine.
+    if (car.health < 45 && Math.random() < dt * 6) {
+      this.puff(car.x + Math.sin(car.heading) * 1.6, 1.1, car.z + Math.cos(car.heading) * 1.6, 0x333333);
     }
     if (input.pressed("KeyE")) this.exitCar();
     // Running over pedestrians.
@@ -445,6 +479,8 @@ SB.Game.prototype.step = function (dt) {
       }
     }
     if (SB.audio) SB.audio.setEngine(Math.abs(car.speed) / 48, true);
+    // Shop/garage/taxi prompt while driving.
+    this.hud.setPrompt(this.jobs.promptFor(this));
   } else {
     var foot = {
       fwd: input.down("KeyW") || input.down("ArrowUp"),
@@ -469,9 +505,10 @@ SB.Game.prototype.step = function (dt) {
       if (near) this.enterCar(near, false);
     }
     if (SB.audio) SB.audio.setEngine(0, false);
-    // Prompt.
+    // Prompt: shop/taxi first, then the car prompt.
     var nearCar = this.nearestCar(4.5);
-    this.hud.setPrompt(nearCar ? (nearCar.stolen ? "Press E to drive" : "Press E to steal the car") : "");
+    var jobPrompt = this.jobs.promptFor(this);
+    this.hud.setPrompt(jobPrompt || (nearCar ? (nearCar.stolen ? "Press E to drive" : "Press E to steal the car") : ""));
   }
   // Health regen.
   this.damageCooldown -= dt;
@@ -495,6 +532,8 @@ SB.Game.prototype.step = function (dt) {
   if (pres.bust) { this.onBusted(); return; }
   // Missions.
   this.missions.update(dt, this);
+  // Shops + taxi job.
+  this.jobs.update(dt, this);
   // Wasted check.
   if (this.player.health <= 0) { this.onWasted(); return; }
   // Camera orbit input.
@@ -551,16 +590,27 @@ SB.Game.prototype.updateRain = function (dt) {
   if (!this.rain.visible) return;
   var pos = this.rain.geometry.attributes.position;
   var cx = this.playerX(), cz = this.playerZ();
-  for (var i = 0; i < pos.count; i++) {
-    var y = pos.getY(i) - 42 * dt;
-    if (y < 0) y = 40;
-    pos.setY(i, y);
-    pos.setX(i, cx + (pos.getX(i) - cx) - 6 * dt + ((i * 7) % 3 - 1) * 0.01);
-    if (pos.getX(i) < cx - 35) pos.setX(i, cx + 35);
-    pos.setZ(i, cz + ((pos.getZ(i) - cz + 35) % 70 + 70) % 70 - 35);
+  var wind = this.rainWind, fall = this.rainFall;
+  var inv = 1 / Math.hypot(wind.x, fall, wind.z);
+  // Streak direction: opposite the fall velocity, so each line leans into
+  // the wind the way real rain does.
+  var sx = -wind.x * inv, sy = fall * inv, sz = -wind.z * inv;
+  for (var i = 0; i < this.rainDrops.length; i++) {
+    var d = this.rainDrops[i];
+    d.y -= fall * dt;
+    d.x += wind.x * dt;
+    d.z += wind.z * dt;
+    if (d.y < 0) { d.y += 40; d.x = (Math.random() - 0.5) * 70; d.z = (Math.random() - 0.5) * 70; }
+    // Wrap the 70x70 curtain around the player.
+    var rx = d.x, rz = d.z;
+    while (rx < -35) rx += 70; while (rx > 35) rx -= 70;
+    while (rz < -35) rz += 70; while (rz > 35) rz -= 70;
+    d.x = rx; d.z = rz;
+    var bx = cx + rx, bz = cz + rz;
+    pos.setXYZ(i * 2, bx, d.y, bz);
+    pos.setXYZ(i * 2 + 1, bx + sx * d.len, d.y + sy * d.len, bz + sz * d.len);
   }
   pos.needsUpdate = true;
-  this.rain.position.set(0, 0, 0);
 };
 
 SB.Game.prototype.updateSmoke = function (dt) {
@@ -636,12 +686,13 @@ SB.Game.prototype.loop = function (now) {
 SB.Game.prototype.probe = function () {
   var self = this;
   return {
-    version: "solbay-s1",
+    version: "solbay-s2",
     state: function () { return self.state; },
     player: self.player,
     playerCar: function () { return self.playerCar; },
     police: self.police,
     missions: self.missions,
+    jobs: self.jobs,
     cars: self.cars,
     money: function () { return self.money; },
     health: function () { return self.player.health; },

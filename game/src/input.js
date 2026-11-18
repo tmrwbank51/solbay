@@ -12,7 +12,7 @@ SB.Input = function (canvas) {
   this.orbitDY = 0;
   this.wheelDelta = 0;
   var self = this;
-  var GAME_KEYS = ["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "KeyW", "KeyA", "KeyS", "KeyD", "KeyE", "KeyF", "KeyM", "KeyR", "KeyT", "KeyP", "KeyH", "KeyQ", "Enter", "Escape", "ShiftLeft", "ShiftRight", "Digit1", "Digit2", "Digit3"];
+  var GAME_KEYS = ["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "KeyW", "KeyA", "KeyS", "KeyD", "KeyE", "KeyF", "KeyM", "KeyR", "KeyT", "KeyP", "KeyH", "KeyQ", "KeyB", "Enter", "Escape", "ShiftLeft", "ShiftRight", "Digit1", "Digit2", "Digit3", "Digit4", "Digit5"];
   window.addEventListener("keydown", function (e) {
     if (GAME_KEYS.indexOf(e.code) >= 0) e.preventDefault();
     if (!self.keys[e.code]) self.justPressed[e.code] = true;

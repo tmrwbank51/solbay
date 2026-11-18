@@ -37,17 +37,29 @@ SB.Police.prototype.wantedTarget = function () {
 };
 
 SB.Police.prototype.spawnPoliceCar = function (px, pz, rng) {
-  // Spawn on a road 60-90 units from the player.
-  var road = rng.pick(SB.CITY.roads);
-  var vertical = rng.chance(0.5);
-  var x, z;
-  for (var tries = 0; tries < 12; tries++) {
-    var along = rng.range(-190, 190);
-    x = vertical ? road : along;
-    z = vertical ? along : road;
-    var d = Math.hypot(x - px, z - pz);
-    if (d > 55 && d < 110) break;
+  // Spawn on a road near the player — closer as the heat rises, so distant
+  // cars converge fast instead of grinding through long road routes. The
+  // spawn point is picked from road-grid points inside the distance band, so
+  // a close spawn is guaranteed (the old try-a-random-road loop often fell
+  // back to a point hundreds of units away, worst at the map edges).
+  var minD = this.wanted >= 4 ? 35 : this.wanted === 3 ? 42 : 52;
+  var maxD = this.wanted >= 4 ? 62 : this.wanted === 3 ? 72 : 95;
+  var inBand = [];
+  var best = null, bestScore = 1e9;
+  var mid = (minD + maxD) / 2;
+  for (var i = 0; i < SB.CITY.roads.length; i++) {
+    for (var a = -200; a <= 200; a += 25) {
+      var pts = [[SB.CITY.roads[i], a], [a, SB.CITY.roads[i]]];
+      for (var k = 0; k < 2; k++) {
+        var d = Math.hypot(pts[k][0] - px, pts[k][1] - pz);
+        if (d > minD && d < maxD) inBand.push(pts[k]);
+        var score = Math.abs(d - mid);
+        if (score < bestScore) { bestScore = score; best = pts[k]; }
+      }
+    }
   }
+  var spot = inBand.length ? rng.pick(inBand) : best;
+  var x = spot[0], z = spot[1];
   var heading = Math.atan2(px - x, pz - z);
   var car = SB.makeCar("police", 0x14181c, x, z, heading, this.tex);
   car.isPolice = true;
@@ -148,8 +160,9 @@ SB.Police.prototype.pursue = function (car, dt, ctx, allCars) {
     }
   } else {
     // Cap the approach speed by distance to the player so the car arrives
-    // at the direct zone under control instead of flying through it.
-    var wantRoute = Math.min(44, Math.max(10, dist * 0.9));
+    // at the direct zone under control instead of flying through it. The cap
+    // matches the police top speed (48): long road legs run flat out.
+    var wantRoute = Math.min(48, Math.max(10, dist * 0.9));
     if (car.speed > wantRoute) { throttle = 0; brake = 0.6; }
     if (legDist < 15 && Math.abs(dh) > 0.5) {
       // Slow for the turn at the end of a road leg so the arc stays on the road.
@@ -200,7 +213,7 @@ SB.Police.prototype.update = function (dt, ctx, rng, allCars) {
       this.despawnCar(car);
       continue;
     }
-    if (d > 220) {
+    if (d > 190) {
       // Too far behind: respawn closer so the chase never dies out.
       this.despawnCar(car);
       this.spawnPoliceCar(ctx.px, ctx.pz, rng);

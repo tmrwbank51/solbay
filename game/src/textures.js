@@ -2,7 +2,7 @@
 // in code, so the game ships no image files and makes no network requests.
 var SB = window.SB || (window.SB = {});
 
-SB.makeCanvasTexture = function (w, h, drawFn, repeatX, repeatY) {
+SB.makeCanvasTexture = function (w, h, drawFn, repeatX, repeatY, crisp) {
   var canvas = document.createElement("canvas");
   canvas.width = w;
   canvas.height = h;
@@ -12,7 +12,8 @@ SB.makeCanvasTexture = function (w, h, drawFn, repeatX, repeatY) {
   tex.wrapS = THREE.RepeatWrapping;
   tex.wrapT = THREE.RepeatWrapping;
   if (repeatX || repeatY) tex.repeat.set(repeatX || 1, repeatY || 1);
-  tex.anisotropy = 4;
+  tex.anisotropy = crisp ? 8 : 4;
+  if (crisp) tex.magFilter = THREE.NearestFilter;
   if ("colorSpace" in tex && THREE.SRGBColorSpace) tex.colorSpace = THREE.SRGBColorSpace;
   else if ("encoding" in tex && THREE.sRGBEncoding) tex.encoding = THREE.sRGBEncoding;
   return tex;
@@ -20,43 +21,64 @@ SB.makeCanvasTexture = function (w, h, drawFn, repeatX, repeatY) {
 
 // Building facade: a grid of windows, a few lit, on a tinted concrete face.
 // One texture serves every building; per-instance colour tints the rest.
+// Drawn at 256x512 with hard window frames and NearestFilter magnification so
+// the facade stays crisp instead of smearing when stretched over tall faces.
+// The lit-window grid is shared with the emissive map (recorded here, read
+// there) so the windows that glow at night are the ones that read lit by day.
+SB._facadeLit = null;
 SB.buildingTexture = function (rng) {
   var tint = rng.pick(["#c8bfae", "#b8c4c4", "#d8cbb2", "#aeb8c2", "#cdbfb4"]);
-  return SB.makeCanvasTexture(128, 256, function (ctx, w, h) {
+  var cols = 6, rows = 14;
+  var lit = [];
+  for (var k = 0; k < cols * rows; k++) lit.push(rng.chance(0.22));
+  SB._facadeLit = lit;
+  return SB.makeCanvasTexture(256, 512, function (ctx, w, h) {
     ctx.fillStyle = tint;
     ctx.fillRect(0, 0, w, h);
-    ctx.fillStyle = "rgba(0,0,0,0.12)";
-    ctx.fillRect(0, 0, w, 6);
-    var cols = 6, rows = 14;
+    ctx.fillStyle = "rgba(0,0,0,0.16)";
+    ctx.fillRect(0, 0, w, 10);
+    ctx.fillRect(0, h - 6, w, 6);
     var cw = w / cols, ch = h / rows;
     for (var y = 0; y < rows; y++) {
       for (var x = 0; x < cols; x++) {
-        var lit = rng.chance(0.22);
-        ctx.fillStyle = lit ? "#ffd98a" : "#2e3a44";
-        ctx.fillRect(x * cw + 3, y * ch + 4, cw - 6, ch - 8);
-        ctx.fillStyle = "rgba(255,255,255,0.25)";
-        ctx.fillRect(x * cw + 3, y * ch + 4, cw - 6, 3);
+        var wx = Math.round(x * cw + 5), wy = Math.round(y * ch + 6);
+        var ww = Math.round(cw - 10), wh = Math.round(ch - 12);
+        // Dark frame, then glass, then a hard top highlight: crisp edges that
+        // survive stretching instead of one soft smudge per window.
+        ctx.fillStyle = "#1c2530";
+        ctx.fillRect(wx - 2, wy - 2, ww + 4, wh + 4);
+        ctx.fillStyle = lit[y * cols + x] ? "#ffd98a" : "#2e3a44";
+        ctx.fillRect(wx, wy, ww, wh);
+        ctx.fillStyle = lit[y * cols + x] ? "rgba(255,255,255,0.55)" : "rgba(255,255,255,0.28)";
+        ctx.fillRect(wx, wy, ww, 5);
+        ctx.fillStyle = "rgba(0,0,0,0.22)";
+        ctx.fillRect(wx, wy + wh - 4, ww, 4);
       }
     }
-  });
+  }, 0, 0, true);
 };
 
 // The lit-window mask used as an emissive map at night: only lit windows glow.
+// Consumes the same 84 rng draws as before (keeps the seeded stream aligned)
+// but draws the shared grid recorded by buildingTexture, so glow matches the
+// lit windows instead of landing on random panes.
 SB.buildingEmissiveTexture = function (rng) {
-  return SB.makeCanvasTexture(128, 256, function (ctx, w, h) {
+  var cols = 6, rows = 14;
+  for (var k = 0; k < cols * rows; k++) rng.chance(0.22);
+  var lit = SB._facadeLit || [];
+  return SB.makeCanvasTexture(256, 512, function (ctx, w, h) {
     ctx.fillStyle = "#000000";
     ctx.fillRect(0, 0, w, h);
-    var cols = 6, rows = 14;
     var cw = w / cols, ch = h / rows;
     for (var y = 0; y < rows; y++) {
       for (var x = 0; x < cols; x++) {
-        if (rng.chance(0.22)) {
+        if (lit[y * cols + x]) {
           ctx.fillStyle = "#ffca66";
-          ctx.fillRect(x * cw + 3, y * ch + 4, cw - 6, ch - 8);
+          ctx.fillRect(Math.round(x * cw + 5), Math.round(y * ch + 6), Math.round(cw - 10), Math.round(ch - 12));
         }
       }
     }
-  });
+  }, 0, 0, true);
 };
 
 SB.roadTexture = function () {

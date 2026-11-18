@@ -1,4 +1,4 @@
-// Missions for SOLBAY: three jobs with briefings, beacons, timers and cash
+// Missions for SOLBAY: five jobs with briefings, beacons, timers and cash
 // rewards, plus the floating markers that start them.
 var SB = window.SB || (window.SB = {});
 
@@ -27,6 +27,30 @@ SB.MISSIONS = [
     target: { x: -150, z: -150 },
     type: "deliver",
     stealAt: { x: 125, z: 100 }
+  },
+  {
+    id: "bay-tour", name: "Bay Tour", reward: 350, timeLimit: 150,
+    giver: "Rally Rex",
+    brief: "Rex runs an illegal street circuit around the whole city. Hit all four checkpoints IN ORDER before the timer dies — any car, any line, just be fast. Miss the clock and the purse is gone.",
+    start: { x: 0, z: 0 },
+    target: { x: 150, z: 150 },
+    type: "checkpoints",
+    checkpoints: [
+      { x: 150, z: 150 }, { x: -150, z: 150 },
+      { x: -150, z: -150 }, { x: 150, z: -150 }
+    ]
+  },
+  {
+    id: "postcard-run", name: "Postcard Run", reward: 300, timeLimit: 0,
+    giver: "Sunny Snaps",
+    brief: "Sunny needs five postcard shots for the tourist board: the Tower, the lifeguard post, the boardwalk, the marina and the north gate. Any order, no timer — show up at each spot and the shot is yours.",
+    start: { x: 50, z: 50 },
+    target: { x: 8, z: -8 },
+    type: "collect",
+    spots: [
+      { x: 8, z: -8 }, { x: 60, z: 218 }, { x: -175, z: 213 },
+      { x: 192, z: 100 }, { x: -192, z: -100 }
+    ]
   }
 ];
 
@@ -102,6 +126,14 @@ SB.MissionManager.prototype.startMission = function (id, game) {
     game.cars.push(car);
     this.markedCar = car;
     this.beacon.position.set(def.stealAt.x, 0, def.stealAt.z);
+  } else if (def.type === "checkpoints") {
+    this.active.checkpoint = 0;
+    this.beacon.position.set(def.checkpoints[0].x, 0, def.checkpoints[0].z);
+  } else if (def.type === "collect") {
+    this.active.visited = {};
+    this.active.found = 0;
+    var near = this.nearestSpot(def, game.playerX(), game.playerZ(), this.active.visited);
+    this.beacon.position.set(near.x, 0, near.z);
   } else if (def.target) {
     this.beacon.position.set(def.target.x, 0, def.target.z);
   }
@@ -145,6 +177,16 @@ SB.MissionManager.prototype.finish = function (won, game) {
   this.refreshStartMarkers();
 };
 
+SB.MissionManager.prototype.nearestSpot = function (def, px, pz, visited) {
+  var best = null, bestD = 1e9;
+  for (var i = 0; i < def.spots.length; i++) {
+    if (visited[i]) continue;
+    var d = Math.hypot(def.spots[i].x - px, def.spots[i].z - pz);
+    if (d < bestD) { bestD = d; best = def.spots[i]; }
+  }
+  return best || def.spots[0];
+};
+
 SB.MissionManager.prototype.update = function (dt, game) {
   var t = performance.now() / 1000;
   for (var i = 0; i < this.startMarkers.length; i++) {
@@ -168,6 +210,37 @@ SB.MissionManager.prototype.update = function (dt, game) {
     if (Math.hypot(px - def.target.x, pz - def.target.z) < 8) this.finish(true, game);
   } else if (def.type === "evade") {
     if (a.t > 3 && game.police.wanted === 0) this.finish(true, game);
+  } else if (def.type === "checkpoints") {
+    var cp = def.checkpoints[a.checkpoint];
+    if (Math.hypot(px - cp.x, pz - cp.z) < 10) {
+      a.checkpoint++;
+      if (SB.audio) SB.audio.sfx("pickup");
+      if (a.checkpoint >= def.checkpoints.length) {
+        this.finish(true, game);
+      } else {
+        if (SB.hud) SB.hud.toast("Checkpoint " + a.checkpoint + "/" + def.checkpoints.length + "!");
+        var next = def.checkpoints[a.checkpoint];
+        this.beacon.position.set(next.x, 0, next.z);
+      }
+    }
+  } else if (def.type === "collect") {
+    for (var si = 0; si < def.spots.length; si++) {
+      if (a.visited[si]) continue;
+      var sp = def.spots[si];
+      if (Math.hypot(px - sp.x, pz - sp.z) < 8) {
+        a.visited[si] = true;
+        a.found++;
+        if (SB.audio) SB.audio.sfx("pickup");
+        if (a.found >= def.spots.length) {
+          this.finish(true, game);
+          return;
+        }
+        if (SB.hud) SB.hud.toast("Postcard " + a.found + "/" + def.spots.length + " snapped!");
+        var near = this.nearestSpot(def, px, pz, a.visited);
+        this.beacon.position.set(near.x, 0, near.z);
+        break;
+      }
+    }
   } else if (def.type === "deliver") {
     if (a.stage === "go" && game.playerCar === this.markedCar) {
       a.stage = "deliver";
@@ -194,6 +267,11 @@ SB.MissionManager.prototype.objectiveText = function () {
     return def.name + ": reach the beacon — " + Math.ceil(left) + "s left";
   }
   if (def.type === "evade") return def.name + ": lose the cops (wanted " + (SB.game ? SB.game.police.wanted : "?") + ")";
+  if (def.type === "checkpoints") {
+    var leftCp = Math.max(0, def.timeLimit - a.t);
+    return def.name + ": checkpoint " + (a.checkpoint + 1) + "/" + def.checkpoints.length + " — " + Math.ceil(leftCp) + "s left";
+  }
+  if (def.type === "collect") return def.name + ": postcards " + a.found + "/" + def.spots.length;
   if (a.stage === "go") return def.name + ": steal the marked coupe";
   return def.name + ": deliver the coupe to the lockup";
 };
