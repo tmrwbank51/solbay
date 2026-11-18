@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SOLBAY — an open-world crime game</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #0a0e14; font-family: Arial, Helvetica, sans-serif; color: #fff; }
+  #game-container { position: fixed; inset: 0; }
+  #game-container canvas { display: block; }
+  /* ---------- HUD ---------- */
+  #hud { position: fixed; inset: 0; pointer-events: none; display: none; z-index: 5; }
+  .panel { background: rgba(8, 12, 18, 0.62); border: 1px solid rgba(255,255,255,0.18); border-radius: 10px; padding: 8px 12px; backdrop-filter: blur(2px); }
+  #top-left { position: absolute; top: 14px; left: 14px; min-width: 240px; }
+  #money { font-size: 26px; font-weight: bold; color: #7ddf8a; letter-spacing: 1px; }
+  #rank-label { font-size: 12px; color: #ffc93c; text-transform: uppercase; letter-spacing: 2px; margin-top: 2px; }
+  #health-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+  #health-bar { flex: 1; height: 12px; background: rgba(255,255,255,0.2); border-radius: 6px; overflow: hidden; }
+  #health-fill { height: 100%; width: 100%; background: #3ddc84; transition: width 0.2s; }
+  #health-text { font-size: 13px; font-weight: bold; }
+  #top-right { position: absolute; top: 14px; right: 14px; text-align: right; }
+  .stars { font-size: 24px; color: #8899aa; letter-spacing: 3px; }
+  .stars.hot { color: #ffc93c; text-shadow: 0 0 10px rgba(255, 201, 60, 0.8); }
+  #clock { font-size: 20px; font-weight: bold; margin-top: 2px; }
+  #weather-icon, #radio-name { font-size: 13px; color: #cfe0ee; margin-top: 2px; }
+  #mission-tracker { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); font-size: 15px; font-weight: bold; color: #ffe9a8; display: none; max-width: 46%; text-align: center; }
+  #speed-box { position: absolute; left: 14px; bottom: 14px; text-align: center; display: none; }
+  #speed { font-size: 34px; font-weight: bold; }
+  #speed-unit { font-size: 12px; color: #cfe0ee; }
+  #street-name { position: absolute; left: 14px; bottom: 86px; font-size: 14px; color: #fff; text-shadow: 0 1px 4px #000; }
+  #minimap-wrap { position: absolute; right: 14px; bottom: 14px; }
+  #minimap { border-radius: 10px; border: 2px solid rgba(255,255,255,0.35); background: #223; }
+  #prompt { position: absolute; bottom: 118px; left: 50%; transform: translateX(-50%); font-size: 16px; font-weight: bold; background: rgba(8,12,18,0.75); padding: 8px 16px; border-radius: 20px; display: none; }
+  #toast { position: absolute; top: 64px; left: 50%; transform: translateX(-50%); font-size: 18px; font-weight: bold; background: rgba(14,125,140,0.9); padding: 10px 22px; border-radius: 22px; opacity: 0; transition: opacity 0.3s; white-space: nowrap; }
+  #toast.show { opacity: 1; }
+  #bust-box { position: absolute; top: 110px; left: 50%; transform: translateX(-50%); width: 280px; display: none; text-align: center; }
+  #bust-label { font-size: 13px; font-weight: bold; color: #ff8a8a; margin-bottom: 4px; letter-spacing: 1px; }
+  #bust-bar { height: 10px; background: rgba(255,255,255,0.2); border-radius: 5px; overflow: hidden; }
+  #bust-fill { height: 100%; width: 0%; background: #ff4444; }
+  #help-hint { position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%); font-size: 12px; color: rgba(255,255,255,0.75); text-shadow: 0 1px 3px #000; }
+  /* ---------- Screens ---------- */
+  .screen { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; flex-direction: column; z-index: 10; background: rgba(5, 8, 14, 0.55); text-align: center; padding: 20px; }
+  .screen.show { display: flex; }
+  .screen h1 { font-size: 64px; letter-spacing: 10px; color: #ffc93c; text-shadow: 0 4px 0 #b3541e, 0 8px 24px rgba(0,0,0,0.7); }
+  .screen h2 { font-size: 34px; letter-spacing: 4px; margin-bottom: 12px; }
+  .screen p { max-width: 560px; font-size: 16px; line-height: 1.5; color: #e8ecf2; margin: 8px 0; }
+  .tagline { font-size: 15px; letter-spacing: 4px; color: #7ddfe8; text-transform: uppercase; margin-bottom: 10px; }
+  .btn { pointer-events: auto; cursor: pointer; display: inline-block; margin: 6px; padding: 12px 30px; font-size: 17px; font-weight: bold; color: #0a0e14; background: #ffc93c; border: none; border-radius: 24px; letter-spacing: 1px; }
+  .btn:hover { background: #ffd968; }
+  .btn.secondary { background: rgba(255,255,255,0.16); color: #fff; border: 1px solid rgba(255,255,255,0.4); }
+  .btn.secondary:hover { background: rgba(255,255,255,0.28); }
+  .controls-grid { display: grid; grid-template-columns: auto auto; gap: 4px 18px; text-align: left; font-size: 14px; margin: 14px 0; background: rgba(8,12,18,0.6); padding: 14px 22px; border-radius: 12px; }
+  .controls-grid b { color: #ffc93c; }
+  .mission-row { text-align: left; background: rgba(8,12,18,0.7); border: 1px solid rgba(255,255,255,0.2); border-radius: 10px; padding: 12px 16px; margin: 8px 0; width: 560px; max-width: 92vw; cursor: pointer; }
+  .mission-row:hover { border-color: #ffc93c; }
+  .mission-row.done { opacity: 0.6; cursor: default; }
+  .mission-brief { font-size: 13px; color: #cfe0ee; margin-top: 4px; line-height: 1.4; }
+  #screen-briefing { background: transparent; align-items: flex-end; justify-content: flex-start; pointer-events: none; }
+  #briefing-box { background: rgba(8,12,18,0.85); border-left: 4px solid #ffc93c; border-radius: 0 12px 12px 0; padding: 16px 22px; margin: 0 0 130px 24px; max-width: 460px; text-align: left; pointer-events: auto; }
+  #brief-title { font-size: 19px; color: #ffc93c; margin-bottom: 6px; }
+  #brief-text { font-size: 14px; line-height: 1.5; }
+  .small { font-size: 12px; color: rgba(255,255,255,0.65); margin-top: 14px; }
+</style>
+</head>
+<body>
+<div id="game-container"></div>
+
+<div id="hud">
+  <div id="top-left" class="panel">
+    <div id="money">$500</div>
+    <div id="rank-label">Rookie</div>
+    <div id="health-row"><span>♥</span><div id="health-bar"><div id="health-fill"></div></div><span id="health-text">100</span></div>
+  </div>
+  <div id="top-right" class="panel">
+    <div id="stars" class="stars">☆☆☆☆☆</div>
+    <div id="clock">08:00</div>
+    <div id="weather-icon">☀ Clear</div>
+    <div id="radio-name">♫ SOL 98.5</div>
+  </div>
+  <div id="mission-tracker" class="panel"></div>
+  <div id="speed-box" class="panel"><div id="speed">0</div><div id="speed-unit">km/h</div></div>
+  <div id="street-name">Sol Bay Blvd</div>
+  <div id="minimap-wrap"><canvas id="minimap" width="220" height="220"></canvas></div>
+  <div id="prompt"></div>
+  <div id="toast"></div>
+  <div id="bust-box"><div id="bust-label">⚠ POLICE ARE CLOSING IN — MOVE!</div><div id="bust-bar"><div id="bust-fill"></div></div></div>
+  <div id="help-hint">WASD move/drive · E enter car · Space jump/handbrake · F punch · M missions · R radio · T weather · P pause · H help</div>
+</div>
+
+<div id="screen-start" class="screen show">
+  <div class="tagline">Welcome to</div>
+  <h1>SOLBAY</h1>
+  <p>Sun, salt and stolen cars. You are <b>Mara Voss</b>, fresh out of luck in a coastal city that runs on fast money. Run jobs, dodge the Solbay PD, and make a name for yourself — one mission at a time.</p>
+  <div>
+    <button class="btn" id="btn-start">▶ Start game</button>
+    <button class="btn secondary" id="btn-continue" style="display:none">Continue saved game</button>
+    <button class="btn secondary" id="btn-help">How to play</button>
+  </div>
+  <div class="controls-grid">
+    <span><b>W A S D</b></span><span>Walk / drive</span>
+    <span><b>E</b></span><span>Enter / exit car (steal it!)</span>
+    <span><b>Space</b></span><span>Jump / handbrake drift</span>
+    <span><b>F</b></span><span>Punch</span>
+    <span><b>M</b></span><span>Missions</span>
+    <span><b>R / T</b></span><span>Radio station / weather</span>
+    <span><b>Mouse drag</b></span><span>Orbit camera · wheel zooms</span>
+  </div>
+  <div class="small">An original game: its city, characters, vehicles, names, story, art and music are all its own.</div>
+</div>
+
+<div id="screen-pause" class="screen">
+  <h2>PAUSED</h2>
+  <p>Sol Bay waits for no one. Well — just this once.</p>
+  <div>
+    <button class="btn" id="btn-resume">Resume</button>
+    <button class="btn secondary" id="btn-missions">Missions</button>
+    <button class="btn secondary" id="btn-save">Save game</button>
+    <button class="btn secondary" id="btn-restart">Restart</button>
+  </div>
+</div>
+
+<div id="screen-missions" class="screen">
+  <h2>MISSIONS</h2>
+  <p>Click a job to start it. Finish all three to own Sol Bay.</p>
+  <div id="mission-list"></div>
+  <div><button class="btn secondary" id="btn-missions-close">Close</button></div>
+</div>
+
+<div id="screen-help" class="screen">
+  <h2>HOW TO PLAY</h2>
+  <p>Explore the city on foot or by car. Press <b>E</b> near any car to take it — stealing raises your wanted level. The police chase you at 1 star and up: break line of sight and stay far away to cool off. If the bust meter fills while you crawl, you are <b>busted</b>; if your health hits zero, you are <b>wasted</b>. Missions pay cash — open them with <b>M</b> or walk to a green beacon. Your game saves when you finish a mission, and from the pause menu.</p>
+  <div><button class="btn" id="btn-help-close">Got it</button></div>
+</div>
+
+<div id="screen-busted" class="screen">
+  <h2>BUSTED</h2>
+  <p>The Solbay PD caught up with you. They kept $150 for the trouble and dropped you at the station. Your wanted level is clear — for now.</p>
+  <div><button class="btn" id="btn-busted-ok">Back to the streets</button></div>
+</div>
+
+<div id="screen-wasted" class="screen">
+  <h2>WASTED</h2>
+  <p>That hurt. The clinic patched you up for $100 and the cops lost interest while you were out.</p>
+  <div><button class="btn" id="btn-wasted-ok">Back to the streets</button></div>
+</div>
+
+<div id="screen-victory" class="screen">
+  <h2>SOL BAY IS YOURS</h2>
+  <p id="victory-stats"></p>
+  <div><button class="btn" id="btn-victory-ok">Keep playing — free roam</button></div>
+</div>
+
+<div id="screen-briefing" class="screen">
+  <div id="briefing-box">
+    <div id="brief-title"></div>
+    <div id="brief-text"></div>
+  </div>
+</div>
+
+<script src="vendor/three.min.js"></script>
+<script src="src/rng.js"></script>
+<script src="src/textures.js"></script>
+<script src="src/city.js"></script>
+<script src="src/vehicles.js"></script>
+<script src="src/character.js"></script>
+<script src="src/pedestrians.js"></script>
+<script src="src/police.js"></script>
+<script src="src/missions.js"></script>
+<script src="src/audio.js"></script>
+<script src="src/input.js"></script>
+<script src="src/hud.js"></script>
+<script src="src/main.js"></script>
+</body>
+</html>
