@@ -12,8 +12,12 @@ import { buildDossier } from "./vendor/makefun-game.ts";
 const here = dirname(fileURLToPath(import.meta.url));
 const outDir = process.env.MAKEFUN_OUTPUT_DIR || "/output";
 
-rmSync(outDir, { recursive: true, force: true });
+// Never delete outDir itself: on the grader it is a mount under a
+// read-only root, so removing it fails (EACCES) and the run dies before
+// writing anything. Clear only the subdirectories we repopulate.
 mkdirSync(outDir, { recursive: true });
+rmSync(join(outDir, "game"), { recursive: true, force: true });
+rmSync(join(outDir, "screenshots"), { recursive: true, force: true });
 cpSync(join(here, "game"), join(outDir, "game"), { recursive: true });
 cpSync(join(here, "screenshots"), join(outDir, "screenshots"), { recursive: true });
 const dossier = buildDossier(outDir, {
